@@ -10,7 +10,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/MainfluxLabs/mainflux/logger"
 	"github.com/MainfluxLabs/mainflux/pkg/errors"
 	"github.com/MainfluxLabs/mainflux/pkg/messaging"
 	"github.com/MainfluxLabs/mainflux/pkg/messaging/nats"
@@ -37,41 +36,35 @@ var _ Service = (*adapterService)(nil)
 type adapterService struct {
 	things  protomfx.ThingsServiceClient
 	pubsub  messaging.PubSub
-	logger  logger.Logger
 	obsLock sync.Mutex
 }
 
 // New instantiates the CoAP adapter implementation.
-func New(things protomfx.ThingsServiceClient, pubsub messaging.PubSub, logger logger.Logger) Service {
+func New(things protomfx.ThingsServiceClient, pubsub messaging.PubSub) Service {
 	as := &adapterService{
 		things:  things,
 		pubsub:  pubsub,
-		logger:  logger,
 		obsLock: sync.Mutex{},
 	}
 
 	return as
 }
 
-func (svc *adapterService) Publish(ctx context.Context, key things.ThingKey, message protomfx.Message) error {
+func (svc *adapterService) Publish(ctx context.Context, key things.ThingKey, msg protomfx.Message) error {
 	cr := &protomfx.ThingKey{Value: key.Value, Type: key.Type}
 	pc, err := svc.things.GetPubConfByKey(ctx, cr)
 	if err != nil {
 		return errors.Wrap(errors.ErrAuthorization, err)
 	}
 
-	if err := messaging.FormatMessage(pc, &message); err != nil {
+	if err := messaging.FormatMessage(pc, &msg); err != nil {
 		return err
 	}
 
-	subs := nats.GetSubjects(message.Subtopic)
-	for _, sub := range subs {
-		m := message
-		m.Subject = sub
+	msg.Subject = nats.GetSubject(msg.Publisher, msg.Subtopic)
 
-		if err := svc.pubsub.Publish(m); err != nil {
-			svc.logger.Error(errors.Wrap(messaging.ErrPublishMessage, err).Error())
-		}
+	if err := svc.pubsub.Publish(msg); err != nil {
+		return err
 	}
 
 	return nil

@@ -9,7 +9,6 @@ package ws
 import (
 	"context"
 
-	"github.com/MainfluxLabs/mainflux/logger"
 	"github.com/MainfluxLabs/mainflux/pkg/errors"
 	"github.com/MainfluxLabs/mainflux/pkg/messaging"
 	"github.com/MainfluxLabs/mainflux/pkg/messaging/nats"
@@ -48,40 +47,33 @@ var _ Service = (*adapterService)(nil)
 type adapterService struct {
 	things protomfx.ThingsServiceClient
 	pubsub messaging.PubSub
-	logger logger.Logger
 }
 
 // New instantiates the WS adapter implementation
-func New(things protomfx.ThingsServiceClient, pubsub messaging.PubSub, logger logger.Logger) Service {
+func New(things protomfx.ThingsServiceClient, pubsub messaging.PubSub) Service {
 	return &adapterService{
 		things: things,
 		pubsub: pubsub,
-		logger: logger,
 	}
 }
 
-func (svc *adapterService) Publish(ctx context.Context, key things.ThingKey, message protomfx.Message) error {
+func (svc *adapterService) Publish(ctx context.Context, key things.ThingKey, msg protomfx.Message) error {
 	pc, err := svc.authorize(ctx, key)
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
 
-	if len(message.Payload) == 0 {
+	if len(msg.Payload) == 0 {
 		return messaging.ErrPublishMessage
 	}
 
-	if err := messaging.FormatMessage(pc, &message); err != nil {
+	if err := messaging.FormatMessage(pc, &msg); err != nil {
 		return err
 	}
 
-	subs := nats.GetSubjects(message.Subtopic)
-	for _, sub := range subs {
-		m := message
-		m.Subject = sub
-
-		if err := svc.pubsub.Publish(m); err != nil {
-			svc.logger.Error(errors.Wrap(messaging.ErrPublishMessage, err).Error())
-		}
+	msg.Subject = nats.GetSubject(msg.Publisher, msg.Subtopic)
+	if err := svc.pubsub.Publish(msg); err != nil {
+		return err
 	}
 
 	return nil

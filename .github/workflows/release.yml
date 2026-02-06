@@ -58,7 +58,7 @@ jobs:
       
       - name: Build and push Docker images
         run: |
-          make latest VERSION=${{ steps.version.outputs.version }}
+          make release VERSION=${{ steps.version.outputs.version }}
       
       - name: Build summary
         run: |
